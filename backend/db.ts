@@ -1,10 +1,11 @@
 import mongoose, { Document, Model, Schema } from 'mongoose'
 
-export interface Host extends Document {
+export interface IHost extends Document {
   ip: string
   name: string
   user: string
   password: string
+  active: boolean
 }
 
 const hostSchema: Schema = new mongoose.Schema({
@@ -12,11 +13,14 @@ const hostSchema: Schema = new mongoose.Schema({
   user: { type: String, required: true },
   password: { type: String, required: true },
   name: { type: String, required: false },
+  active: { type: Boolean, required: true },
 })
 
-const Host: Model<Host> = mongoose.model<Host>('Host', hostSchema)
+const Host: Model<IHost> = mongoose.model<IHost>('Host', hostSchema)
 
 const name = 'basedscan'
+
+const HostModel = mongoose.model('Host', hostSchema)
 
 async function connectDb(): Promise<mongoose.Mongoose> {
   try {
@@ -34,4 +38,4 @@ async function connectDb(): Promise<mongoose.Mongoose> {
   }
 }
 
-export { connectDb, Host }
+export { connectDb, Host, HostModel }

@@ -4,7 +4,7 @@ import { Client } from 'ssh2'
 import fs from 'fs-extra'
 import os from 'os'
 
-import { connectDb, Host, HostModel } from './db'
+import { connectDb, Host, HostModel, Target, TargetModel } from './db'
 
 const jsonParser = bodyParser.json()
 
@@ -110,7 +110,107 @@ connectDb().then(db => {
         res.send('pong')
     })
 
-    app.post('/execute-long', async (req, res) => {
+    app.post('/full-dir-map', async (req, res) => {
+        const { targetUrl, hostName } = req.body
+
+        const host = connectedHosts.find(x => x.name === hostName)
+
+        const target = TargetModel.findOne({ url: targetUrl })
+
+        const createCmd = ({
+            protocol = 'https://',
+            domain = '',
+            url = '',
+            dir = '',
+            list = '~/SecLists/Discovery/Web-Content/common.txt',
+            mc = 200,
+            rate = 400,
+            t = 30
+        }) => {
+            if (domain.length) domain += '.'
+            if (dir.length) dir += '/'
+            return `ffuf -u ${protocol}${domain}${url}/${dir}FUZZ -w ${list} -r -mc ${mc} -rate ${rate} -t ${t}`
+        }
+
+        const targetDir = todayDir + '/' + targetUrl
+        const toolDir = targetDir + '/' + 'ffuf'
+        fs.mkdirpSync(toolDir)
+        const filePath = toolDir + '/' + new Date().toString().split(' ')[4] + '.txt'
+
+        const walk = async (url = '', dir = '', domain = '', allFiles: string[] = [], allDirs: string[] = [], tree: any = {}) => {
+            const { result: files } = await _exec(createCmd({
+                url,
+                dir,
+                domain,
+            }), host, true, async (data) => {
+                fs.writeFileSync(filePath, data, { flag: 'a+' })
+            })
+
+            const filesSt = JSON.stringify(files)
+            const found = filesSt.split('* FUZZ: ').filter(x => !x.includes('Status')).map(
+                x => x.replaceAll('\n', '').replaceAll('\\n', '').replace(/[^\w\s.]/gi, "")
+            )
+
+            for (const f of found) {
+                const newDirPath = dir.length ? (dir + '/' + f) : f
+                const path = domain + url + '/' + newDirPath
+                if (!f.includes('.')) { // sus
+                    allDirs.push(path)
+                    // tree[path] = []
+                    await walk(url, newDirPath, domain, allFiles, allDirs, tree)
+                } else {
+                    allFiles.push(path)
+                    // tree[path].push(path)
+                }
+            }
+
+            return { allFiles, allDirs, tree }
+        }
+
+        const { allFiles, allDirs } = await walk(targetUrl)
+
+        console.log('files', allFiles)
+        console.log('dirs', allDirs)
+
+        res.json({ files: allFiles, dirs: allDirs })
+    })
+
+    const safeInsert = async (model: any, dType: any, filter: any, fields: any) => { // dbms apis arent for humans...
+        const doc = await model.findOne(filter)
+        
+        if (doc) {
+            for (const key in fields) {
+                const field = fields[key]
+
+                if (!doc[key]) {
+                    doc[key] = field
+                } else {
+                    if (doc[key] !== field) {
+                        if (doc[key].length !== undefined && field.length !== undefined) {
+                            for (const elem of field) {
+                                if (!doc[key].includes(elem)) {
+                                    doc[key].push(elem)
+                                }
+                            }
+                        } else {
+                            if ((!doc[key] || [''].includes(field)) && !!field) {
+                                doc[key] = field
+                            }
+                        }
+                    }
+                }
+            }
+
+            await doc.save()
+            return doc
+        } else {
+            const newDoc = new dType(fields)
+            await newDoc.save()
+            return newDoc
+        }
+    }
+
+    app.post('/execute-long', async (req, res) => { // todo: url in command and url in dir situation
         const { cmd, name, targetUrl } = req.body
 
         const host = connectedHosts.find(x => x.name === name)
@@ -133,11 +233,19 @@ connectDb().then(db => {
 
         filePath = toolDir + '/' + new Date().toString().split(' ')[4] + '.txt'
 
+        const result = await safeInsert(TargetModel, Target, { url: targetUrl }, {
+            url: targetUrl,
+            active: true,
+            domains: [],
+            headers: [],
+            scans: [filePath],
+        })
+
         await host.execute(cmd, false, async (data: string) => {
             fs.writeFileSync(filePath, data, { flag: 'a+' }) // todo: stream?
         })
 
-        return res.json({ success: 1 })
+        return res.json({ success: 1, target: result })
     })
 
     app.post('/execute', async (req, res) => {
@@ -165,6 +273,8 @@ connectDb().then(db => {
             'yes | pacman --noprogressbar -Syuu',
             'yes | pacman --noprogressbar -S git wget',
             'git clone https://github.com/danielmiessler/SecLists',
+            'git clone https://github.com/emadshanab/WordLists-20111129',
+            'git clone https://github.com/drtychai/wordlists',
         ]
 
         const allCmds = [...blackArch, ...tools]
@@ -183,6 +293,29 @@ connectDb().then(db => {
         } catch (e) {
             return res.json({ success: 0, err: e })
         }
+    })
+
+    app.get('/target/:id', async (req, res) => {
+        const id = req.params.id
+        const target = await TargetModel.findById(id)
+        res.json(target)
+    })
+
+    app.get('/target', async (_, res) => {
+        const targets = await TargetModel.find()
+        res.json(targets)
+    })
+
+    app.post('/target', async (req, res) => {
+        const { ip, } = req.body
+
+        const target = new Target({
+            ip, 
+        })
+
+        await target.save()
+
+        res.json(target)
     })
 
     app.get('/host/:id', async (req, res) => {

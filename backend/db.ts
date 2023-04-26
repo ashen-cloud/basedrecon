@@ -1,5 +1,29 @@
 import mongoose, { Document, Model, Schema } from 'mongoose'
 
+export interface ITarget extends Document {
+  url: string
+  ip: string | null
+  active: boolean | null
+  domains: string[] | null
+  headers: string[] | null
+  scans: string[] | null
+  dirTree: any | null
+}
+
+const targetSchema: Schema = new mongoose.Schema({
+  url: { type: String, required: true },
+  ip: { type: String, required: false },
+  active: { type: Boolean, required: false, default: true },
+  domains: { type: [String], required: false, default: []  },
+  headers: { type: [String], required: false, default: [] },
+  scans: { type: [String], required: false, default: [] },
+  dirTree: { type: Schema.Types.Mixed, required: false, default: {} },
+})
+
+const Target: Model<ITarget> = mongoose.model<ITarget>('Target', targetSchema)
+
+const TargetModel = mongoose.model('Target', targetSchema)
+
 export interface IHost extends Document {
   ip: string
   name: string
@@ -18,9 +42,9 @@ const hostSchema: Schema = new mongoose.Schema({
 
 const Host: Model<IHost> = mongoose.model<IHost>('Host', hostSchema)
 
-const name = 'basedscan'
-
 const HostModel = mongoose.model('Host', hostSchema)
+
+const name = 'basedscan'
 
 async function connectDb(): Promise<mongoose.Mongoose> {
   try {
@@ -38,4 +62,4 @@ async function connectDb(): Promise<mongoose.Mongoose> {
   }
 }
 
-export { connectDb, Host, HostModel }
+export { connectDb, Host, HostModel, Target, TargetModel }

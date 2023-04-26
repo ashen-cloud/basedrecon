@@ -20,13 +20,50 @@ export interface IHost {
   active: boolean
 }
 
-interface ConnectedHost extends IHost {
-    execute: (cmd: string) => Promise<{result: string[], code: number, signal: number}>
+type IExecReturn = Promise<{result: string[], code: number, signal: number}>
+
+interface IConnectedHost extends IHost {
+    execute: (cmd: string, out?: boolean) => IExecReturn
     // connection: Client
 }
 
+const _exec = (cmd: string, h: IHost, out = false): IExecReturn => {
+    const connection = new Client()
+    return new Promise((resolve, _) => {
+        connection.on('ready', () => {
+            console.log(`connection to ${h.name}-${h.ip} opened`)
+            connection.exec(cmd, (err, stream) => {
+                const buffer: string[] = []
+
+                if (err) throw err
+                stream.on('close', (code, signal) => {
+                    console.log(`connection to ${h.name}-${h.ip} closed`)
+                    connection.end()
+                })
+                stream.on('data', (data: string) => {
+                    console.log(`data from ${h.name}-${h.ip} received`)
+                    buffer.push(data.toString())
+                })
+                .on('end', (code: number, signal: number) => {
+                    console.log(`process on ${h.name}-${h.ip} exited with code ${code}`)
+                    return resolve({ result: out ? buffer : [], code, signal}) // todo: why code undefined?
+                })
+                .stderr.on('data', (data) => {
+                    console.log(`STDERR ol ${h.name}-${h.ip}: ${data}`)
+                })
+            })
+
+        }).connect({
+            host: h.ip,
+            port: 22,
+            username: h.user,
+            password: h.password
+        })
+    })
+}
+
 connectDb().then(db => {
-    let connectedHosts: ConnectedHost[] = [];
+    let connectedHosts: IConnectedHost[] = [];
 
     (async _ => {
         const hosts = await HostModel.find({ active: true })
@@ -35,34 +72,9 @@ connectDb().then(db => {
             
             return {
                 ...h._doc,
-                execute:  cmd => {
-                    return new Promise((resolve, reject) => {
-                        const connection = new Client()
-                        connection.on('ready', () => {
-                            connection.exec(cmd, (err, stream) => {
-                                console.log('here')
-                                const buffer: string[] = []
-                                if (err) throw err
-                                stream.on('close', (code, signal) => {
-                                    console.log('connection closed')
-                                    connection.end()
-                                })
-                                stream.on('data', (data: string) => {
-                                    buffer.push(data.toString())
-                                })
-                                .on('end', (code: number, signal: number) => {
-                                    return resolve({ result: buffer, code, signal})
-                                })
-                                .stderr.on('data', (data) => {
-                                    console.log('STDERR', data)
-                                })
-                            })
-                        }).connect({
-                            host: h.ip,
-                            port: 22,
-                            username: h.user,
-                            password: h.password
-                        })
+                execute:  (cmd: string, out = true) => {
+                    return new Promise(async (resolve, _) => {
+                        return resolve(await _exec(cmd, h, out))
                     })
                 }
             }

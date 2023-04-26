@@ -1,6 +1,8 @@
 import express, { Request, Response, NextFunction } from 'express'
 import bodyParser from 'body-parser'
 import { Client } from 'ssh2'
+import fs from 'fs-extra'
+import os from 'os'
 
 import { connectDb, Host, HostModel } from './db'
 
@@ -12,6 +14,15 @@ app.use(jsonParser)
 
 const PORT = process.env.PORT || 8600
 
+const homeDir = os.homedir()
+
+const WORKING_DIR = process.env.WORKING_DIR || `${homeDir}/Basedscan/`
+
+const todayDir = WORKING_DIR + new Date().toISOString().split('T')[0]
+
+fs.mkdirpSync(WORKING_DIR)
+fs.mkdirpSync(todayDir)
+
 export interface IHost {
   ip: string
   name: string
@@ -21,13 +32,14 @@ export interface IHost {
 }
 
 type IExecReturn = Promise<{result: string[], code: number, signal: number}>
+type IDataCb = (data: string) => Promise<string | void>
 
 interface IConnectedHost extends IHost {
-    execute: (cmd: string, out?: boolean) => IExecReturn
+    execute: (cmd: string, out?: boolean, cb?: IDataCb) => IExecReturn
     // connection: Client
 }
 
-const _exec = (cmd: string, h: IHost, out = false): IExecReturn => {
+const _exec = (cmd: string, h: IHost, out = true, cb?: IDataCb): IExecReturn => {
     const connection = new Client()
     return new Promise((resolve, _) => {
         connection.on('ready', () => {
@@ -42,14 +54,20 @@ const _exec = (cmd: string, h: IHost, out = false): IExecReturn => {
                 })
                 stream.on('data', (data: string) => {
                     console.log(`data from ${h.name}-${h.ip} received`)
-                    buffer.push(data.toString())
+                    if (cb) {
+                        cb(data)
+                    }
+                    if (out) {
+                        buffer.push(data.toString())
+                    }
                 })
                 .on('end', (code: number, signal: number) => {
                     console.log(`process on ${h.name}-${h.ip} exited with code ${code}`)
                     return resolve({ result: out ? buffer : [], code, signal}) // todo: why code undefined?
                 })
                 .stderr.on('data', (data) => {
-                    console.log(`STDERR ol ${h.name}-${h.ip}: ${data}`)
+                    data = data.toString()
+                    console.log(`STDERR on ${h.name}-${h.ip}: ${data}`)
                 })
             })
 
@@ -63,6 +81,11 @@ const _exec = (cmd: string, h: IHost, out = false): IExecReturn => {
 }
 
 connectDb().then(db => {
+    const _tools = [
+        'amass',
+        'ffuf',
+    ]
+
     let connectedHosts: IConnectedHost[] = [];
 
     (async _ => {
@@ -72,9 +95,9 @@ connectDb().then(db => {
             
             return {
                 ...h._doc,
-                execute:  (cmd: string, out = true) => {
+                execute:  (cmd: string, out = true, cb?: IDataCb) => {
                     return new Promise(async (resolve, _) => {
-                        return resolve(await _exec(cmd, h, out))
+                        return resolve(await _exec(cmd, h, out, cb))
                     })
                 }
             }
@@ -85,6 +108,36 @@ connectDb().then(db => {
     app.get('/ping', async (_, res) => {
         console.log(connectedHosts)
         res.send('pong')
+    })
+
+    app.post('/execute-long', async (req, res) => {
+        const { cmd, name, targetUrl } = req.body
+
+        const host = connectedHosts.find(x => x.name === name)
+
+        const targetDir = todayDir + '/' + targetUrl
+        fs.mkdirpSync(targetDir)
+
+        const toolName = cmd.split(' ')[0]
+
+        if (toolName === ' ') {
+            return res.json({ success: 0, err: 'no command' })
+        }
+
+        let toolDir: string
+        let filePath: string
+
+         // todo: command might not be equal to package name
+        toolDir = targetDir + '/' + (_tools.includes(toolName) ? toolName : '_other')
+        fs.mkdirpSync(toolDir)
+
+        filePath = toolDir + '/' + new Date().toString().split(' ')[4] + '.txt'
+
+        await host.execute(cmd, false, async (data: string) => {
+            fs.writeFileSync(filePath, data, { flag: 'a+' }) // todo: stream?
+        })
+
+        return res.json({ success: 1 })
     })
 
     app.post('/execute', async (req, res) => {
@@ -99,6 +152,37 @@ connectDb().then(db => {
             signal,
             result
         })
+    })
+
+    const setupHost = async (h: IConnectedHost) => {
+        const tools = _tools.map(x => 'yes | pacman --noprogressbar -S ' + x)
+
+        const blackArch = [
+            'yes | pacman --noprogressbar -Syuu',
+            'curl -O https://blackarch.org/strap.sh',
+            'chmod +x strap.sh',
+            './strap.sh',
+            'yes | pacman --noprogressbar -Syuu',
+            'yes | pacman --noprogressbar -S git wget',
+            'git clone https://github.com/danielmiessler/SecLists',
+        ]
+
+        const allCmds = [...blackArch, ...tools]
+
+        for (const cmd of allCmds) {
+            await h.execute(cmd, false)
+        }
+    }
+
+    app.post('/host/setup', async (req, res) => {
+        const name = req.body?.name
+        const h = connectedHosts.find(x => x.name === name)
+        try {
+            await setupHost(h)
+            return res.json({ success: 1 })
+        } catch (e) {
+            return res.json({ success: 0, err: e })
+        }
     })
 
     app.get('/host/:id', async (req, res) => {

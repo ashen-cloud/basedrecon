@@ -115,7 +115,7 @@ connectDb().then(db => {
 
         const host = connectedHosts.find(x => x.name === hostName)
 
-        const target = TargetModel.findOne({ url: targetUrl })
+        const target = await TargetModel.findOne({ url: targetUrl })
 
         const createCmd = ({
             protocol = 'https://',
@@ -123,13 +123,13 @@ connectDb().then(db => {
             url = '',
             dir = '',
             list = '~/SecLists/Discovery/Web-Content/common.txt',
-            mc = 200,
+            mc = '200,201,202,203,204,206,301',
             rate = 400,
-            t = 30
+            t = 40
         }) => {
             if (domain.length) domain += '.'
             if (dir.length) dir += '/'
-            return `ffuf -u ${protocol}${domain}${url}/${dir}FUZZ -w ${list} -r -mc ${mc} -rate ${rate} -t ${t}`
+            return `ffuf -u ${protocol}${domain}${url}/${dir}FUZZ -e '/' -fr 'not found|404' -w ${list} -mc ${mc} -rate ${rate} -t ${t}`
         }
 
         const targetDir = todayDir + '/' + targetUrl
@@ -137,7 +137,7 @@ connectDb().then(db => {
         fs.mkdirpSync(toolDir)
         const filePath = toolDir + '/' + new Date().toString().split(' ')[4] + '.txt'
 
-        const walk = async (url = '', dir = '', domain = '', allFiles: string[] = [], allDirs: string[] = [], tree: any = {}) => {
+        const walk = async ({ url = '', dir = '', domain = '', allFiles = [], allDirs = [], tree = {} }) => {
             const { result: files } = await _exec(createCmd({
                 url,
                 dir,
@@ -146,33 +146,62 @@ connectDb().then(db => {
                 fs.writeFileSync(filePath, data, { flag: 'a+' })
             })
 
-            const filesSt = JSON.stringify(files)
-            const found = filesSt.split('* FUZZ: ').filter(x => !x.includes('Status')).map(
-                x => x.replaceAll('\n', '').replaceAll('\\n', '').replace(/[^\w\s.]/gi, "")
-            )
+            const found = JSON.stringify(files).split('* FUZZ: ')
+                .join('')
+                // .replaceAll(/\[.+?\]/g, "")
+                .split('\\u001b')
+                .map(x => x.split('    ').pop())
+                .filter(x => !!x.length && !x.includes('[2K[') && !x.includes('[0m') && !x.includes('["\\r'))
+                .map(x => x.replaceAll('\\n', '').replaceAll(',"\\r', '').replaceAll('"]', '').replaceAll('"', ''))
 
             for (const f of found) {
+                if (!f.length) {
+                    continue
+                }
+                if (f === '[]') {
+                    continue
+                }
+                if (f === dir.split('/').pop()) {
+                    continue
+                }
                 const newDirPath = dir.length ? (dir + '/' + f) : f
-                const path = domain + url + '/' + newDirPath
-                if (!f.includes('.')) { // sus
+                
+                const path = (domain.length ? (domain + '.') : '') + url + '/' + newDirPath
+                if (!f.slice(1).includes('.')) { // sus
                     allDirs.push(path)
-                    // tree[path] = []
-                    await walk(url, newDirPath, domain, allFiles, allDirs, tree)
+                    let tempTree = tree
+                    for (const el of path.split('/')) {
+                        tempTree[el] = {}
+                        tempTree = tempTree[el]
+                    }
+                    await walk({ url, dir: newDirPath, domain, allFiles, allDirs, tree })
                 } else {
                     allFiles.push(path)
-                    // tree[path].push(path)
+                    let tempTree = tree
+                    for (let el of dir.split('/')) {
+                        if (!el.length) el = url
+                        if (!tempTree[el]) tempTree[el] = {}
+                        tempTree[el][f] = ''
+                        tempTree = tempTree[el]
+                    }
                 }
             }
 
             return { allFiles, allDirs, tree }
         }
 
-        const { allFiles, allDirs } = await walk(targetUrl)
+        const results: any = []
 
-        console.log('files', allFiles)
-        console.log('dirs', allDirs)
+        if (!target.domains.length) target.domains.push('', 'www')
+        for (const _domain of target.domains) {
+            const { allFiles, allDirs, tree } = await walk({ url: targetUrl, domain: _domain })
+            console.log('files', allFiles)
+            console.log('dirs', allDirs)
+            console.log('tree', tree)
+            results.push({ files: allFiles, dirs: allDirs, tree })
+        }
 
-        res.json({ files: allFiles, dirs: allDirs })
+        res.json(results)
     })
 
     const safeInsert = async (model: any, dType: any, filter: any, fields: any) => { // dbms apis arent for humans...
@@ -307,10 +336,22 @@ connectDb().then(db => {
     })
 
     app.post('/target', async (req, res) => {
-        const { ip, } = req.body
+        const { 
+            url,
+            active,
+            domains,
+            headers,
+            scans,
+            dirTree,
+        } = req.body
 
         const target = new Target({
-            ip, 
+            url,
+            active: active || true,
+            domains: domains || [],
+            headers: headers || [],
+            scans: scans || [],
+            dirTree: dirTree || {},
         })
 
         await target.save()

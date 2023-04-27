@@ -143,7 +143,7 @@ connectDb().then(db => {
         fs.mkdirpSync(toolDir)
         const filePath = toolDir + '/' + new Date().toString().split(' ')[4] + '.txt'
 
-        const allDirs: any = {}
+        const allDirs: string[] = []
         const allFiles: string[] = []
 
         const allHits: string[] = []
@@ -161,7 +161,7 @@ connectDb().then(db => {
                 domain: _domain,
             })
 
-            await _exec(command, host, false, async (data) => {
+            const { result: files } = await _exec(command, host, true, async (data) => {
                 const dataSt = data.toString()
                 const dataEscaped = JSON.stringify(dataSt)
                 const dataCleaned = dataEscaped.split('* FUZZ: ').pop().replaceAll('\\n', '').replace('"', '')
@@ -174,8 +174,7 @@ connectDb().then(db => {
                     const dirArr = dirPath.split('/')
                     const dirName = dirArr[dirArr.length - 2]
 
-                    // allDirs.push({ dirName: dirPath.replace('http://', '').replace('https://', '').replace('/FUZZ', '') })
-                    allDirs[dirName] = dirPath.replace('http://', '').replace('https://', '').replace('/FUZZ', '')
+                    allDirs.push(dirName)
 
                     if (allHits.includes(dirName)) {
                         let tempTree = tree
@@ -196,34 +195,46 @@ connectDb().then(db => {
 
                 }
             })
-            console.log(allDirs)
 
-            for (const hit of allHits) {
-                if (!Object.keys(allDirs).includes(hit)) {
-                    allFiles.push(hit)
+            const found = JSON.stringify(files).split('* FUZZ: ')
+                .join('')
+                .split('\\u001b')
+                .map(x => x.split('    ').pop())
+                .filter(x => !!x.length && !x.includes('[2K[') && !x.includes('[0m') && !x.includes('["\\r'))
+                .map(x => x.replaceAll('\\n', '').replaceAll(',"\\r', '').replaceAll('"]', '').replaceAll('"', ''))
+
+            console.log('FOUND', found)
+
+            for (const f of found) {
+                if (!f.length) {
+                    continue
                 }
-            }
-
-
-            let i = 0
-            for (const file of allFiles) {
-                const dirPath = (Object.values(allDirs).reverse()[i] as string).split('/')
-                let tempTree = tree
-                let j = 0
-                for (let el of dirPath) {
-                    if (j === dirPath.length - 1) {
-                        tempTree[el][file] = ''
-                    }
-                    if (tempTree.hasOwnProperty(el)) tempTree = tempTree[el]
-                    j++
+                if (f === '[]') {
+                    continue
                 }
-                i++
-            }
+                // if (f === dir.split('/').pop()) {
+                //     continue
+                // }
 
+                // const newDirPath = dir.length ? (dir + '/' + f) : f
+                // 
+                // const path = (domain.length ? (domain + '.') : '') + url + '/' + newDirPath
+
+
+                // let tempTree = tree
+                // for (let el of dir.split('/')) {
+                //     if (!el.length) el = url
+                //     if (!tempTree[el]) tempTree[el] = {}
+                //     tempTree[el][f] = ''
+                //     tempTree = tempTree[el]
+                // }
+            }
         }
 
         const results: any = []
 
+        console.log('files', allFiles)
+        console.log('dirs', allDirs)
         console.log('tree', tree)
         results.push({ files: allFiles, dirs: allDirs, tree })
 

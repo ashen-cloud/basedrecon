@@ -174,7 +174,6 @@ connectDb().then(db => {
                     const dirArr = dirPath.split('/')
                     const dirName = dirArr[dirArr.length - 2]
 
-                    // allDirs.push({ dirName: dirPath.replace('http://', '').replace('https://', '').replace('/FUZZ', '') })
                     allDirs[dirName] = dirPath.replace('http://', '').replace('https://', '').replace('/FUZZ', '')
 
                     if (allHits.includes(dirName)) {
@@ -196,7 +195,6 @@ connectDb().then(db => {
 
                 }
             })
-            console.log(allDirs)
 
             for (const hit of allHits) {
                 if (!Object.keys(allDirs).includes(hit)) {
@@ -224,7 +222,9 @@ connectDb().then(db => {
 
         const results: any = []
 
-        console.log('tree', tree)
+        target.dirTree = tree
+        await target.save()
+
         results.push({ files: allFiles, dirs: allDirs, tree })
 
         res.json(results)

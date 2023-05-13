@@ -2,7 +2,7 @@
 	"apps" : [
 		{
 			"name"        : "basedscan",
-			"script"      : "main.js",
+			"script"      : "build/main.js",
 			"exec_mode"   : "fork",
 			"watch"       : "*",
 			"log_date_format": "YYYY-MM-DD HH:mm:ss.SSS",

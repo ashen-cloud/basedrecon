@@ -113,15 +113,15 @@ connectDb().then(db => {
         res.send('pong')
     })
 
-    app.post('/full-dir-map', async (req, res) => {
-        const { targetUrl, hostName } = req.body
+    app.post('/full-dir-fuzz', async (req, res) => {
+        const { targetUrl, hostName, protocol: _protocol } = req.body
 
         const host = connectedHosts.find(x => x.name === hostName)
 
         const target = await TargetModel.findOne({ url: targetUrl })
 
         const createCmd = ({
-            protocol = 'http://',
+            protocol = _protocol || 'https://',
             domain = '',
             url = '',
             // dir = '',
@@ -146,8 +146,6 @@ connectDb().then(db => {
         const allDirs: any = {}
         const allFiles: string[] = []
 
-        const allHits: string[] = []
-
         const tree: any = {}
 
         if (!target.domains.length) {
@@ -162,61 +160,11 @@ connectDb().then(db => {
             })
 
             await _exec(command, host, false, async (data) => {
-                const dataSt = data.toString()
-                const dataEscaped = JSON.stringify(dataSt)
-                const dataCleaned = dataEscaped.split('* FUZZ: ').pop().replaceAll('\\n', '').replace('"', '')
-                allHits.push(dataCleaned)
                 fs.writeFileSync(filePath, data, { flag: 'a+' })
             }, async (data) => {
                 data = data.toString()
-                if (data.includes('[INFO]') && data.includes('Adding')) {
-                    const dirPath = data.split(': ').pop().replaceAll('\n', '')
-                    const dirArr = dirPath.split('/')
-                    const dirName = dirArr[dirArr.length - 2]
-
-                    allDirs[dirName] = dirPath.replace('http://', '').replace('https://', '').replace('/FUZZ', '')
-
-                    if (allHits.includes(dirName)) {
-                        let tempTree = tree
-                        for (const el of dirArr) {
-                            if (!el.length) {
-                                continue
-                            }
-                            if (el.includes('FUZZ')) {
-                                continue
-                            }
-                            if (el.includes('http')) {
-                                continue
-                            }
-                            tempTree[el] = {}
-                            tempTree = tempTree[el]
-                        }
-                    }
-
-                }
+                console.log('DATA', data)
             })
-
-            for (const hit of allHits) {
-                if (!Object.keys(allDirs).includes(hit)) {
-                    allFiles.push(hit)
-                }
-            }
-
-
-            let i = 0
-            for (const file of allFiles) {
-                const dirPath = (Object.values(allDirs).reverse()[i] as string).split('/')
-                let tempTree = tree
-                let j = 0
-                for (let el of dirPath) {
-                    if (j === dirPath.length - 1) {
-                        tempTree[el][file] = ''
-                    }
-                    if (tempTree.hasOwnProperty(el)) tempTree = tempTree[el]
-                    j++
-                }
-                i++
-            }
 
         }
 
@@ -421,3 +369,79 @@ connectDb().then(db => {
       console.log('started server on port', PORT)
     })
 })
+
+
+
+/*                                      TRASH
+ 
+
+
+
+                                                        const dataSt = data.toString()
+                const dataEscaped = JSON.stringify(dataSt)
+                console.log('DATA ESCAPED', dataEscaped)
+                const dataCleaned = dataEscaped.split('* FUZZ: ').pop().replaceAll('\\n', '').replace('"', '')
+                allHits.push(dataCleaned)
+
+ 
+
+if (data.includes('[INFO]') && data.includes('Adding')) {
+                    const dirPath = data.split(': ').pop().replaceAll('\n', '')
+                    const dirArr = dirPath.split('/')
+                    const dirName = dirArr[dirArr.length - 2]
+
+                    allDirs[dirName] = dirPath.replace('http://', '').replace('https://', '').replace('/FUZZ', '')
+
+                    if (allHits.includes(dirName)) {
+                        let tempTree = tree
+                        for (const el of dirArr) {
+                            if (!el.length) {
+                                continue
+                            }
+                            if (el.includes('FUZZ')) {
+                                continue
+                            }
+                            if (el.includes('http')) {
+                                continue
+                            }
+                            tempTree[el] = {}
+                            tempTree = tempTree[el]
+                        }
+                    }
+
+                }
+
+
+
+
+   
+            for (const hit of allHits) {
+                if (!Object.keys(allDirs).includes(hit)) {
+                    allFiles.push(hit)
+                }
+            }
+
+            let i = 0
+            console.log('FILES', allFiles)
+            console.log('DIRS', allDirs)
+            for (const file of allFiles) {
+                const dirPath = (Object.values(allDirs).reverse()[i] as string).split('/')
+                console.log('PATH', dirPath)
+                let tempTree = tree
+                let j = 0
+                for (let el of dirPath) {
+                    console.log('TREE', JSON.stringify(tree))
+                    console.log('tree el', tree[el])
+                    console.log('EL', el)
+                    if (j === dirPath.length - 1) {
+                        tempTree[el][file] = ''
+                    }
+                    if (tempTree.hasOwnProperty(el)) tempTree = tempTree[el]
+                    j++
+                }
+                i++
+            }
+
+
+
+*/

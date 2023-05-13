@@ -20,6 +20,14 @@ const WORKING_DIR = process.env.WORKING_DIR || `${homeDir}/Basedscan/`
 
 const todayDir = WORKING_DIR + new Date().toISOString().split('T')[0]
 
+const getFinalPath = (toolName: string, targetUrl: string): string => {
+    const targetDir = todayDir + '/' + targetUrl
+    const toolDir = targetDir + '/' + toolName
+    fs.mkdirpSync(toolDir)
+    const filePath = toolDir + '/' + new Date().toString().split(' ')[4] + '.txt'
+    return filePath
+}
+
 fs.mkdirpSync(WORKING_DIR)
 fs.mkdirpSync(todayDir)
 
@@ -33,13 +41,14 @@ export interface IHost {
 
 type IExecReturn = Promise<{result: string[], code: number, signal: number}>
 type IDataCb = (data: string) => Promise<string | void>
+type IEndCb = () => Promise<void>
 
 interface IConnectedHost extends IHost {
     execute: (cmd: string, out?: boolean, cb?: IDataCb) => IExecReturn
     // connection: Client
 }
 
-const _exec = (cmd: string, h: IHost, out = true, dataCb?: IDataCb, stderrCb?: IDataCb): IExecReturn => {
+const _exec = (cmd: string, h: IHost, out = true, dataCb?: IDataCb, stderrCb?: IDataCb, endCb?: IEndCb): IExecReturn => {
     const connection = new Client()
     return new Promise((resolve, _) => {
         connection.on('ready', () => {
@@ -87,6 +96,8 @@ connectDb().then(db => {
     const _tools = [
         'amass',
         'ffuf',
+        'assetfinder',
+        'subfinder',
     ]
 
     let connectedHosts: IConnectedHost[] = [];
@@ -113,6 +124,63 @@ connectDb().then(db => {
         res.send('pong')
     })
 
+    app.post('/full-dns-fuzz', async (req, res) => {
+        const { targetUrl, hostName, protocol: _protocol } = req.body
+
+        const host = connectedHosts.find(x => x.name === hostName)
+
+        const target = await TargetModel.findOne({ url: targetUrl })
+
+        const dnsTools = [
+            ({ url, limit = 1000, t = 40 }) => {
+                return `amass enum -passive -active -d ${url} -max-dns-queries ${limit}`
+            },
+            ({ url, limit = 1000, t = 40 }) => {
+                return `subfinder -all -recursive -list SecLists/Discovery/DNS/subdomains-top1million-5000.txt -silent -t ${t} -rl ${limit} -d ${url}`
+            },
+            ({ url, limit = 1000, t = 40 }) => {
+                return `assetfinder ${url}`
+            },
+        ]
+
+        const resultPromises: Promise<any>[] = []
+
+        const foundDomains: Set<string> = new Set()
+
+        for (const tool of dnsTools) {
+            const command = tool({
+                url: targetUrl,
+            })
+
+            const toolName = command.split(' ')[0]
+
+            const filePath = getFinalPath(toolName, targetUrl)
+
+            const r = _exec(command, host, false, async (data) => {
+                fs.writeFileSync(filePath, data, { flag: 'a+' })
+                const domain = data.toString().replace('\n', '')
+                console.log('domain found', toolName, domain)
+                foundDomains.add(domain)
+            }, async (data) => {
+                data = data.toString()
+                console.log('DATA STDERR', toolName, data.toString())
+            }, async () => {
+                target.scans.push(filePath)
+                await target.save()
+            })
+
+            resultPromises.push(r)
+        }
+
+        await Promise.all(resultPromises)
+
+        target.domains = [...foundDomains, ...target.domains]
+
+        await target.save()
+
+        res.json({ success: 1 })
+    })
+
     app.post('/full-dir-fuzz', async (req, res) => {
         const { targetUrl, hostName, protocol: _protocol } = req.body
 
@@ -126,7 +194,7 @@ connectDb().then(db => {
             url = '',
             // dir = '',
             // list = '~/SecLists/Discovery/Web-Content/common.txt',
-            list = '~/common.txt',
+            list = '~/SecLists/Discovery/Web-Content/common.txt',
             mc = '200,201,202,203,204,206,301',
             rate = 10000,
             t = 40,
@@ -138,15 +206,7 @@ connectDb().then(db => {
             return `ffuf -u ${protocol}${domain}${url}/FUZZ -recursion -fr 'not found|404' -w ${list} -mc ${mc} -rate ${rate} -t ${t}`
         }
 
-        const targetDir = todayDir + '/' + targetUrl
-        const toolDir = targetDir + '/' + 'ffuf'
-        fs.mkdirpSync(toolDir)
-        const filePath = toolDir + '/' + new Date().toString().split(' ')[4] + '.txt'
-
-        const allDirs: any = {}
-        const allFiles: string[] = []
-
-        const tree: any = {}
+        const filePath = getFinalPath('ffuf', targetUrl)
 
         if (!target.domains.length) {
             target.domains.push('')
@@ -168,14 +228,11 @@ connectDb().then(db => {
 
         }
 
-        const results: any = []
+        target.scans.push(filePath)
 
-        target.dirTree = tree
         await target.save()
 
-        results.push({ files: allFiles, dirs: allDirs, tree })
-
-        res.json(results)
+        res.json({ success: 1, filePath })
     })
 
     const safeInsert = async (model: any, dType: any, filter: any, fields: any) => { // dbms apis arent for humans...
@@ -373,6 +430,20 @@ connectDb().then(db => {
 
 
 /*                                      TRASH
+ *
+ *                              
+         const results: any = []
+
+
+         target.dirTree = tree
+        results.push({ files: allFiles, dirs: allDirs, tree })
+
+        const allDirs: any = {}
+        const allFiles: string[] = []
+
+        const tree: any = {}
+
+
  
 
 

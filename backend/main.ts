@@ -158,9 +158,9 @@ connectDb().then(db => {
 
             const r = _exec(command, host, false, async (data) => {
                 fs.writeFileSync(filePath, data, { flag: 'a+' })
-                const domain = data.toString().replace('\n', '')
+                const domain = data.toString()
                 console.log('domain found', toolName, domain)
-                foundDomains.add(domain)
+                foundDomains.add(domain.replaceAll('\n', ''))
             }, async (data) => {
                 data = data.toString()
                 console.log('DATA STDERR', toolName, data.toString())

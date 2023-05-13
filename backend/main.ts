@@ -57,9 +57,10 @@ const _exec = (cmd: string, h: IHost, out = true, dataCb?: IDataCb, stderrCb?: I
                 const buffer: string[] = []
 
                 if (err) throw err
-                stream.on('close', (code, signal) => {
+                stream.on('close', (code: any, signal: any) => {
                     console.log(`connection to ${h.name}-${h.ip} closed`)
                     connection.end()
+                    resolve({ result: out ? buffer : [], code, signal })
                 })
                 stream.on('data', (data: string) => {
                     // console.log(`data from ${h.name}-${h.ip} received`)
@@ -72,7 +73,10 @@ const _exec = (cmd: string, h: IHost, out = true, dataCb?: IDataCb, stderrCb?: I
                 })
                 .on('end', (code: number, signal: number) => {
                     console.log(`process on ${h.name}-${h.ip} exited with code ${code}`)
-                    return resolve({ result: out ? buffer : [], code, signal}) // todo: why code undefined?
+                    if (endCb) {
+                        endCb()
+                    }
+                    return resolve({ result: out ? buffer : [], code, signal }) // todo: why code undefined?
                 })
                 .stderr.on('data', (data) => {
                     data = data.toString()
@@ -98,6 +102,7 @@ connectDb().then(db => {
         'ffuf',
         'assetfinder',
         'subfinder',
+        'nmap',
     ]
 
     let connectedHosts: IConnectedHost[] = [];
@@ -179,6 +184,37 @@ connectDb().then(db => {
         await target.save()
 
         res.json({ success: 1 })
+    })
+
+    app.post('/portscan', async (req, res) => {
+        const {
+            targetUrl,
+            aFlag,
+            svFlag,
+            top100,
+            hostName,
+        } = req.body
+
+        const cmd = ({
+            aFlag = true,
+            svFlag = true,
+            top100 = true,
+            T = 3,
+        }) => `nmap ${aFlag ? '-A' : ''} ${svFlag ? '-sV' : ''} -T${T} ${top100 ? '-F' : ''} ${targetUrl}`
+
+        const host = connectedHosts.find(x => x.name === hostName)
+        
+        const command = cmd({ aFlag, svFlag, top100 })
+
+        const toolName = command.split(' ')[0]
+
+        const filePath = getFinalPath(toolName, targetUrl)
+
+        await _exec(command, host, false, async (data) => {
+            fs.writeFileSync(filePath, data, { flag: 'a+' })
+        })
+
+        return res.json({ success: 1 })
     })
 
     app.post('/full-dir-fuzz', async (req, res) => {

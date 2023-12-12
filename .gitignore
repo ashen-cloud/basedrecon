@@ -2,3 +2,8 @@ build
 node_modules
 package-lock.json
 testreq.js
+
+
+# Added by cargo
+
+/target

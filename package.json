@@ -5,7 +5,8 @@
   "main": "main.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node main.js"
+    "start": "node build/main.js",
+    "build": "tsc"
   },
   "author": "ashencloud",
   "license": "ISC",
@@ -16,7 +17,7 @@
     "fs-extra": "^11.1.1",
     "mongoose": "^7.0.5",
     "ssh2": "^1.11.0",
-    "typescript": "^5.0.4"
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
     "@types/axios": "^0.14.0",
@@ -24,6 +25,7 @@
     "@types/express": "^4.17.17",
     "@types/fs-extra": "^11.0.1",
     "@types/node": "^18.16.0",
-    "@types/ssh2": "^1.11.11"
+    "@types/ssh2": "^1.11.11",
+    "typescript": "^5.0.4"
   }
 }

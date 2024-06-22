@@ -1,1 +1,1 @@
-Was a very stupid tool, isn't anymore
+bunch of random scripts for different purposes

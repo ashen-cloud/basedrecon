@@ -1,6 +1,6 @@
 #!/usr/bin/bash
 
-binaries=("dnsx", "httpx", "jq", "tew", "gospider", "puredns", "nmap")
+binaries=("dnsx", "httpx-pd", "jq", "tew", "gospider", "puredns", "nmap")
 
 echo "Starting scan:"
 
@@ -22,7 +22,7 @@ dnsx -l "$DIR/resolved.txt" -json -o "$DIR/dns.json" | jq -r '.a?[]?' | anew "$D
 
 # ports and servers
 nmap -T4 -vv -iL "$DIR/ips.txt" --top-ports 3000 -n --open -oX "$DIR/nmap.xml"
-tew -x "$DIR/nmap.xml" -dnsx "$DIR/dns.json" --vhost -o "$DIR/hostport.txt" | httpx -sr -srd "$DIR/responses" -json -o "$DIR/http.json"
+tew -x "$DIR/nmap.xml" -dnsx "$DIR/dns.json" --vhost -o "$DIR/hostport.txt" | httpx-pd -sr -srd "$DIR/responses" -json -o "$DIR/http.json"
 
 cat "$DIR/http.json" | jq -r '.url' | sed -e 's/:80$//g' -e 's/:443$//g' | sort -u > "$DIR/http.txt"
 
@@ -30,4 +30,4 @@ cat "$DIR/http.json" | jq -r '.url' | sed -e 's/:80$//g' -e 's/:443$//g' | sort 
 gospider -S "$DIR/http.txt" --json | grep "{" | jq -r '.output?' | tee "$DIR/crawl.txt"
 
 # js
-cat "$DIR/crawl.txt" | grep "\.js" | httpx -sr -srd "$DIR/js"
+cat "$DIR/crawl.txt" | grep "\.js" | httpx-pd -sr -srd "$DIR/js"

@@ -2,19 +2,6 @@
 
 binaries=("dnsx", "httpx", "jq", "tew", "gospider", "puredns", "nmap")
 
-check_binary() {
-  if command -v "$1" >/dev/null 2>&1; then
-    echo "$1 is present"
-  else
-    echo "$1 is not present"
-    exit 1
-  fi
-}
-
-for binary in "${binaries[@]}"; do
-  check_binary "$binary"
-done
-
 echo "Starting scan:"
 
 HOST=$1

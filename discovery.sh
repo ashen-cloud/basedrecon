@@ -7,10 +7,10 @@ echo "Starting scan:"
 mkdir -p "./scans"
 
 HOST=$1
-DIR="./$HOST"
+DIR="./scans/$HOST"
 
 # Create directory for the host
-mkdir -p "./scans/$DIR"
+mkdir -p "./$DIR"
 
 # find subdomains
 echo $HOST | subfinder | anew "$DIR/subs.txt" | wc -l

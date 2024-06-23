@@ -21,10 +21,10 @@ HOST=$1
 
 # find subdomains
 echo $HOST | subfinder | anew subs.txt | wc -l
-shuffledns -d $HOST -mode bruteforce -w "~/SecLists/Discovery/DNS/bug-bounty-program-subdomains-trickest-inventory.txt" -r "~/resolvers.txt" | anew subs.txt | wc -l
+shuffledns -d $HOST -mode bruteforce -w "/home/c0/SecLists/Discovery/DNS/bug-bounty-program-subdomains-trickest-inventory.txt" -r "/home/c0/resolvers.txt" | anew subs.txt | wc -l
 
 # resolve discovered ones
-puredns resolve "./subs.txt" -r "~/resolvers.txt" -w "./resolved.txt" | wc -l
+puredns resolve "./subs.txt" -r "/home/c0/resolvers.txt" -w "./resolved.txt" | wc -l
 dnsx -l "./resolved.txt" -json -o "./dns.json" | jq -r '.a?[]?' | anew "./ips.txt" | wc -l
 
 # ports and servers

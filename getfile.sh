@@ -5,7 +5,6 @@ HOSTS_PATH="hosts"
 REMOTE_FILE_PATH="${1}"
 LOCAL_DIR="out"
 
-# Ensure the local directory exists
 mkdir -p "$LOCAL_DIR"
 
 while IFS=' ' read -r USER IP PASSWORD
